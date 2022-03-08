@@ -1,4 +1,7 @@
 using System.Globalization;
+using System.Net;
+using System.Net.Mime;
+using System.Text.Json;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Localization;
 using Microsoft.Extensions.DependencyInjection;
@@ -21,7 +24,6 @@ if (!app.Environment.IsDevelopment())
 }
 
 // Configure the middleware we'll be using to set the culture for the current execution context
-app.UseMiddleware<LocalizationMiddleware>();
 
 app.UseHttpsRedirection();
 app.UseStaticFiles();
@@ -33,6 +35,8 @@ app.UseAuthorization();
 app.MapControllerRoute(
     name: "default",
     pattern: "{controller=Home}/{action=Index}/{id?}");
+
+app.UseMiddleware<LocalizationMiddleware>();
 
 app.Run();
 
@@ -52,22 +56,36 @@ internal sealed class LocalizationMiddleware
         var marketIdCookieValue = context.Request.Cookies["marketId"];
         if (!int.TryParse(marketIdCookieValue, out var marketId))
         {
-            await _next(context);
+            await WriteResponse(context, "Invalid market ID", HttpStatusCode.NotFound);
             return;
         }
         
-        var marketService = new MarketService();
-        var currencyFormat = marketService.GetCurrencyForMarket(marketId);
+        var currencyFormat = _marketService.GetCurrencyForMarket(marketId);
+        
+        CultureInfo.CurrentCulture = CultureInfo.CurrentUICulture = new CultureInfo(currencyFormat.Locale);
 
-        CultureInfo.DefaultThreadCurrentCulture = CultureInfo.DefaultThreadCurrentUICulture = new CultureInfo(currencyFormat.Locale);
-
-        var numberFormat = CultureInfo.DefaultThreadCurrentCulture!.NumberFormat;
+        var numberFormat = CultureInfo.CurrentCulture!.NumberFormat;
         numberFormat.CurrencySymbol = currencyFormat.CurrencySign;
         numberFormat.CurrencyDecimalSeparator = currencyFormat.DecimalSeparator;
         numberFormat.CurrencyGroupSeparator = currencyFormat.GroupSeparator;
         numberFormat.CurrencyDecimalDigits = currencyFormat.DecimalPrecision;
 
         await _next(context);
+    }
+    
+    private async Task WriteResponse(HttpContext context, string message, HttpStatusCode statusCode)
+    {
+        var details = new
+        {
+            Message = message
+        };
+
+        var result = JsonSerializer.Serialize(details);
+
+        context.Response.StatusCode = (int)statusCode;
+        context.Response.ContentType = MediaTypeNames.Application.Json;
+
+        await context.Response.WriteAsync(result);
     }
 }
 
