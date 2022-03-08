@@ -56,8 +56,8 @@ internal sealed class LocalizationMiddleware
             return;
         }
         
-        var currencyService = new MarketService();
-        var currencyFormat = currencyService.GetCurrencyForMarket(marketId);
+        var marketService = new MarketService();
+        var currencyFormat = marketService.GetCurrencyForMarket(marketId);
 
         CultureInfo.DefaultThreadCurrentCulture = CultureInfo.DefaultThreadCurrentUICulture = new CultureInfo(currencyFormat.Locale);
 
