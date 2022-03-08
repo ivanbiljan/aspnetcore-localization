@@ -1,11 +1,14 @@
 using System.Globalization;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Localization;
+using Microsoft.Extensions.DependencyInjection;
 
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
-builder.Services.AddControllersWithViews();
+var services = builder.Services;
+services.AddControllersWithViews();
+services.AddTransient<MarketService>();
 
 var app = builder.Build();
 
@@ -17,39 +20,8 @@ if (!app.Environment.IsDevelopment())
     app.UseHsts();
 }
 
-// Configure the request localization feature
-// app.UseRequestLocalization(options =>
-// {
-//     var allCultures = new List<CultureInfo> {new("hr-hr"), new("is-is"), new("en-us")};
-//
-//     options.SupportedCultures = allCultures;
-//     options.SupportedUICultures = allCultures;
-// });
-
 // Configure the middleware we'll be using to set the culture for the current execution context
-app.Use(async (context, next) =>
-{
-    var tenantId = context.Request.Cookies["tenantId"];
-    if (tenantId is null)
-    {
-        await next(context);
-        return;
-    }
-
-    var countryId = Math.Max(int.Parse(tenantId), 1);
-    var currencyService = new CurrencyService();
-    var currencyFormat = currencyService.GetCurrencyForCountry(countryId);
-
-    CultureInfo.DefaultThreadCurrentCulture = CultureInfo.DefaultThreadCurrentUICulture = new CultureInfo(currencyFormat.Locale);
-
-    var numberFormat = CultureInfo.DefaultThreadCurrentCulture!.NumberFormat;
-    numberFormat.CurrencySymbol = currencyFormat.CurrencySign;
-    numberFormat.CurrencyDecimalSeparator = currencyFormat.DecimalSeparator;
-    numberFormat.CurrencyGroupSeparator = currencyFormat.GroupSeparator;
-    numberFormat.CurrencyDecimalDigits = currencyFormat.DecimalPrecision;
-
-    await next(context);
-});
+app.UseMiddleware<LocalizationMiddleware>();
 
 app.UseHttpsRedirection();
 app.UseStaticFiles();
@@ -64,7 +36,42 @@ app.MapControllerRoute(
 
 app.Run();
 
-internal sealed class CurrencyService
+internal sealed class LocalizationMiddleware
+{
+    private readonly MarketService _marketService;
+    private readonly RequestDelegate _next;
+
+    public LocalizationMiddleware(MarketService marketService, RequestDelegate next)
+    {
+        _marketService = marketService;
+        _next = next;
+    }
+
+    public async Task InvokeAsync(HttpContext context)
+    {
+        var marketIdCookieValue = context.Request.Cookies["marketId"];
+        if (!int.TryParse(marketIdCookieValue, out var marketId))
+        {
+            await _next(context);
+            return;
+        }
+        
+        var currencyService = new MarketService();
+        var currencyFormat = currencyService.GetCurrencyForMarket(marketId);
+
+        CultureInfo.DefaultThreadCurrentCulture = CultureInfo.DefaultThreadCurrentUICulture = new CultureInfo(currencyFormat.Locale);
+
+        var numberFormat = CultureInfo.DefaultThreadCurrentCulture!.NumberFormat;
+        numberFormat.CurrencySymbol = currencyFormat.CurrencySign;
+        numberFormat.CurrencyDecimalSeparator = currencyFormat.DecimalSeparator;
+        numberFormat.CurrencyGroupSeparator = currencyFormat.GroupSeparator;
+        numberFormat.CurrencyDecimalDigits = currencyFormat.DecimalPrecision;
+
+        await _next(context);
+    }
+}
+
+internal sealed class MarketService
 {
     private static readonly IList<CurrencyFormatDto> CurrencyFormats = new List<CurrencyFormatDto>
     {
@@ -73,9 +80,9 @@ internal sealed class CurrencyService
         new("$", ".", ",", 2, "en-us")
     };
 
-    public CurrencyFormatDto GetCurrencyForCountry(int countryId)
+    public CurrencyFormatDto GetCurrencyForMarket(int marketId)
     {
-        return CurrencyFormats[countryId - 1];
+        return CurrencyFormats[marketId - 1];
     }
 }
 

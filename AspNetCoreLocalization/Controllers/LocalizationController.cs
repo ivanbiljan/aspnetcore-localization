@@ -12,10 +12,7 @@ public sealed class LocalizationController : ControllerBase
 {
     public async Task<IActionResult> SetActiveLanguage(int tenantId)
     {
-        var currency = Currency.DefaultCurrencies[tenantId % Currency.DefaultCurrencies.Count];
-        var culture = new CultureInfo(currency.Locale);
-        
-        Response.Cookies.Append("tenantId",
+        Response.Cookies.Append("marketId",
             tenantId.ToString(),
             new CookieOptions {Expires = DateTimeOffset.UtcNow.AddYears(1)});
 
